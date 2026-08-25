@@ -25,7 +25,7 @@ class MACWrapper:
         kim_mode='none',
         kim_k=1.0,
         kim_lambda=None,
-        norm_p=1.0
+        norm_p=0.75
     ):
         self.model = model
         self.vae = vae
@@ -350,12 +350,13 @@ class MACWrapper:
         percentile,
         global_step,
         total_steps=None,
+        mac_enabled=True,
     ):
         z0 = torch.randn_like(x)
         batch = (x, c)
 
         if self.model_type == 'select':
-            if self.add_weight == 0:
+            if (not mac_enabled) or self.add_weight == 0:
                 loss = self.get_loss(
                     x,
                     z0,
@@ -363,6 +364,7 @@ class MACWrapper:
                     global_step=global_step,
                     total_steps=total_steps,
                 )
+        
             else:
                 indices_low = select_low_loss_indices(
                     self.ema_model,
@@ -371,6 +373,7 @@ class MACWrapper:
                     percentile,
                     model='meanflow',
                 )
+        
                 loss = self.get_loss(
                     x,
                     z0,
