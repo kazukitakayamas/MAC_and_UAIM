@@ -126,6 +126,25 @@ if __name__ == '__main__':
     parser.add_argument('--noncond', action='store_true')
     parser.add_argument('--method', type=str, default='meanflow', choices=['meanflow', 'flow_matching', 'shortcut', 'batchot'])
     parser.add_argument('--model_type', type=str, default='select', choices=['select', 'full'])
+
+    parser.add_argument(
+        '--kim_mode',
+        type=str,
+        default='none',
+        choices=['none', 'progressive'],
+    )
+    
+    parser.add_argument(
+        '--kim_k',
+        type=float,
+        default=1.0,
+    )
+    
+    parser.add_argument(
+        '--norm_p',
+        type=float,
+        default=0.75,
+    )
     args = parser.parse_args()
 
     # data
@@ -218,9 +237,37 @@ if __name__ == '__main__':
     }
     # build model + MAC wrapper
     
-    mac = MACWrapper(model, vae, args.add_weight, model_type=args.model_type)
-    mac.model.load_state_dict(torch.load('./saved/%s_%s_%s_mac_ema_model_final_p%.2f_w%.2f_class_cond_%s.pth'%(args.dataset, args.method, args.model_type, args.percent, args.add_weight, class_cond),
-               map_location='cuda:0'))
+    mac = MACWrapper(
+        model,
+        vae,
+        args.add_weight,
+        model_type=args.model_type,
+    )
+
+    kim_tag = f"kim-{args.kim_mode}-k{args.kim_k:.1f}"
+    model_path = (
+        f'./saved/'
+        f'{args.dataset}_{args.method}_{args.model_type}_{kim_tag}_'
+        f'mac_ema_model_final_'
+        f'p{args.percent:.2f}_'
+        f'w{args.add_weight:.2f}_'
+        f'normp{args.norm_p:.2f}_'
+        f'class_cond_{class_cond}.pth'
+    )
+    print(f"[Eval] Loading model:")
+    print(model_path)
+    
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(
+            f"Model file not found: {model_path}"
+        )
+    
+    state_dict = torch.load(
+        model_path,
+        map_location='cuda:0'
+    )
+    
+    mac.model.load_state_dict(state_dict)
     mac.model.cuda()
     mac.model.eval()
     os.makedirs("contents", exist_ok=True)
