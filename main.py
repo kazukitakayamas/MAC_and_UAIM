@@ -476,6 +476,11 @@ if __name__ == '__main__':
     # Create the Trainer.
     trainer = pl.Trainer(**trainer_kwargs)
     trainer.fit(model_pl, train_dataloaders=train_loader, val_dataloaders=val_loader, ckpt_path=args.ckpt_path)
+
+    mac_tag = (
+        f"mactiming-{args.mac_timing}-"
+        f"split{args.mac_split:.2f}"
+    )
     
     if not os.path.exists('./saved'):
         os.makedirs('./saved')
@@ -483,7 +488,8 @@ if __name__ == '__main__':
     torch.save(
         model_pl.model.state_dict(),
         f'./saved/{args.dataset}_{args.method}_{args.model_type}_{kim_tag}_'
-        f'mac_model_final_p{args.percent:.2f}_'
+        f'{mac_tag}_'
+        f'mac_ema_model_final_p{args.percent:.2f}_'
         f'w{args.add_weight:.2f}_'
         f'normp{args.norm_p:.2f}_'
         f'class_cond_{class_cond}.pth'
@@ -491,6 +497,7 @@ if __name__ == '__main__':
     torch.save(
         model_pl.mac.ema_model.state_dict(),
         f'./saved/{args.dataset}_{args.method}_{args.model_type}_{kim_tag}_'
+        f'{mac_tag}_'
         f'mac_ema_model_final_p{args.percent:.2f}_'
         f'w{args.add_weight:.2f}_'
         f'normp{args.norm_p:.2f}_'
