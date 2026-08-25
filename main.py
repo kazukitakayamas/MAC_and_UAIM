@@ -384,7 +384,9 @@ if __name__ == '__main__':
         filename=(
             f'{args.method}-{args.model_type}-{args.dataset}-'
             f'{kim_tag}-'
-            f'{args.percent:.2f}-{args.add_weight:.2f}-'
+            f'percent{args.percent:.2f}-'
+            f'w{args.add_weight:.2f}-'
+            f'normp{args.norm_p:.2f}-'
             f'{class_cond}-{{epoch:04d}}'
         ),
         every_n_epochs=10,
