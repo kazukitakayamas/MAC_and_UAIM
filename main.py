@@ -78,6 +78,22 @@ def get_current_percentile(step, warmup_steps=100, start_val=1.0, end_val=0.4):
     else:
         return end_val
 
+#MAC ON or OFF Swiching
+def is_mac_active(mac_timing, progress, split=0.5):
+    if mac_timing == 'none':
+        return False
+
+    if mac_timing == 'all':
+        return True
+
+    if mac_timing == 'early':
+        return progress < split
+
+    if mac_timing == 'late':
+        return progress >= split
+
+    raise ValueError(f"Unknown mac_timing: {mac_timing}")
+
 class MACModulePL(pl.LightningModule):
     def __init__(self, hparams, mac):
         super().__init__()
@@ -100,24 +116,34 @@ class MACModulePL(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         x, c = batch
-        percentile = get_current_percentile(self.global_step, warmup_steps=20000, start_val=1.0, end_val=self.hparams['percent'])
-        # loss = self.mac.forward(x, c, percentile, self.global_step)
-
-
+    
         total_steps = max(
             int(self.trainer.estimated_stepping_batches),
             1
         )
-
-        # Progressive Kim weighting needs total_steps to compute training progress.
-        # Other modes keep the original MAC wrapper call for compatibility.
-        if self.hparams['method'] == 'meanflow' and self.hparams['kim_mode'] == 'progressive':
+    
+        progress = min(
+            max(float(self.global_step) / float(total_steps), 0.0),
+            1.0
+        )
+    
+        mac_enabled = is_mac_active(
+            self.hparams['mac_timing'],
+            progress,
+            self.hparams['mac_split'],
+        )
+    
+        # Timing実験ではselection ratioを固定する
+        percentile = self.hparams['percent']
+    
+        if self.hparams['method'] == 'meanflow':
             loss = self.mac.forward(
                 x,
                 c,
                 percentile,
                 self.global_step,
                 total_steps,
+                mac_enabled=mac_enabled,
             )
         else:
             loss = self.mac.forward(
@@ -126,8 +152,14 @@ class MACModulePL(pl.LightningModule):
                 percentile,
                 self.global_step,
             )
-
+    
         self.log('train_loss', loss, prog_bar=True)
+        self.log(
+            'mac_active',
+            float(mac_enabled),
+            prog_bar=False,
+        )
+    
         return loss
     
     def on_train_batch_end(self, outputs, batch, batch_idx, dataloader_idx=0):
@@ -237,8 +269,28 @@ if __name__ == '__main__':
     parser.add_argument(
         '--norm_p',
         type=float,
-        default=1.0,
+        default=None,
         help='Power p for MeanFlow adaptive loss normalization.',
+    )
+    if args.norm_p is None:
+        if args.dataset == 'cifar':
+            args.norm_p = 0.75
+        else:
+            args.norm_p = 1.0
+
+    parser.add_argument(
+        '--mac_timing',
+        type=str,
+        default='all',
+        choices=['none', 'early', 'late', 'all'],
+        help='When MAC is active during training.',
+    )
+    
+    parser.add_argument(
+        '--mac_split',
+        type=float,
+        default=0.5,
+        help='Training progress boundary for early/late MAC.',
     )
 
     args = parser.parse_args()
@@ -346,6 +398,8 @@ if __name__ == '__main__':
         'kim_k': args.kim_k,
         'kim_lambda': args.kim_lambda,
         'norm_p': args.norm_p,
+        'mac_timing': args.mac_timing,
+        'mac_split': args.mac_split,
     }
     # build model + MAC wrapper
     # Kim progressive weighting is implemented only for MeanFlow.
