@@ -273,6 +273,7 @@ if __name__ == '__main__':
                     num_head_channels=64,
                     attention_resolutions="16",
                     dropout=0.1,
+                    norm_p=args.norm_p,
                 )
         vae = None
 
@@ -431,6 +432,8 @@ if __name__ == '__main__':
     torch.save(
         model_pl.mac.ema_model.state_dict(),
         f'./saved/{args.dataset}_{args.method}_{args.model_type}_{kim_tag}_'
-        f'mac_ema_model_final_p{args.percent:.2f}_w{args.add_weight:.2f}_'
+        f'mac_ema_model_final_p{args.percent:.2f}_'
+        f'w{args.add_weight:.2f}_'
+        f'normp{args.norm_p:.2f}_'
         f'class_cond_{class_cond}.pth'
     )
