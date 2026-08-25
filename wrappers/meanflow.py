@@ -25,7 +25,7 @@ class MACWrapper:
         kim_mode='none',
         kim_k=1.0,
         kim_lambda=None,
-        norm_p=0.75
+        norm_p=1.0
     ):
         self.model = model
         self.vae = vae
