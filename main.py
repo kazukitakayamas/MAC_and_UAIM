@@ -31,9 +31,7 @@ class CelebaLatentDataset(Dataset):
         latent [C, h, w] sampled through DiagonalGaussianDistribution.sample()
         label  int
     """
-    def __init__(self,
-                 latent_dir: str,
-                 flip_prob: float = 0.5):
+    def __init__(self, latent_dir: str, flip_prob: float = 0.5):
         self.latent_dir = latent_dir
         self.files = sorted([f for f in os.listdir(latent_dir) if f.endswith(".pth")])
         self.flip_prob = float(flip_prob)
@@ -103,7 +101,32 @@ class MACModulePL(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         x, c = batch
         percentile = get_current_percentile(self.global_step, warmup_steps=20000, start_val=1.0, end_val=self.hparams['percent'])
-        loss = self.mac.forward(x, c, percentile, self.global_step)
+        # loss = self.mac.forward(x, c, percentile, self.global_step)
+
+
+        total_steps = max(
+            int(self.trainer.estimated_stepping_batches),
+            1
+        )
+
+        # Progressive Kim weighting needs total_steps to compute training progress.
+        # Other modes keep the original MAC wrapper call for compatibility.
+        if self.hparams['method'] == 'meanflow' and self.hparams['kim_mode'] == 'progressive':
+            loss = self.mac.forward(
+                x,
+                c,
+                percentile,
+                self.global_step,
+                total_steps,
+            )
+        else:
+            loss = self.mac.forward(
+                x,
+                c,
+                percentile,
+                self.global_step,
+            )
+
         self.log('train_loss', loss, prog_bar=True)
         return loss
     
@@ -113,7 +136,11 @@ class MACModulePL(pl.LightningModule):
 
     def on_train_epoch_end(self):
         if self.current_epoch % 20 == 0:
-            save_dir = f"checkpoints/mf_{self.hparams['dataset']}_class_cond{self.hparams['class_cond']}"
+            kim_tag = f"kim-{self.hparams['kim_mode']}-k{self.hparams['kim_k']:.1f}"
+            save_dir = (
+                f"checkpoints/mf_{self.hparams['dataset']}_"
+                f"class_cond{self.hparams['class_cond']}_{kim_tag}"
+            )
             os.makedirs(save_dir, exist_ok=True)
 
             model_path = os.path.join(save_dir, f"model_epoch{self.current_epoch:04d}.pth")
@@ -167,6 +194,8 @@ class MACModulePL(pl.LightningModule):
 
         self.mac.model.train()
 
+        
+
 if __name__ == '__main__':
     seed = 42
     seed_everything(seed, workers=True)
@@ -183,6 +212,35 @@ if __name__ == '__main__':
     parser.add_argument('--method', type=str, default='meanflow', choices=['meanflow', 'flow_matching', 'shortcut', 'batchot'])
     parser.add_argument('--model_type', type=str, default='select', choices=['select', 'full'])
     parser.add_argument('--ckpt_path', type=str, default=None)
+
+    # ===== Kim progressive MeanFlow =====
+    parser.add_argument(
+        '--kim_mode',
+        type=str,
+        default='none',
+        choices=['none', 'progressive'],
+    )
+
+    parser.add_argument(
+        '--kim_k',
+        type=float,
+        default=1.0,
+    )
+
+    parser.add_argument(
+        '--kim_lambda',
+        type=float,
+        default=None,
+        help='Lambda for Kim progressive Lu weighting. If None, estimate automatically.',
+    )
+    
+    parser.add_argument(
+        '--norm_p',
+        type=float,
+        default=1.0,
+        help='Power p for MeanFlow adaptive loss normalization.',
+    )
+
     args = parser.parse_args()
 
     if args.method == 'meanflow':
@@ -284,15 +342,62 @@ if __name__ == '__main__':
 
         'method':     args.method,
         'model_type': args.model_type,
+        'kim_mode': args.kim_mode,
+        'kim_k': args.kim_k,
+        'kim_lambda': args.kim_lambda,
     }
     # build model + MAC wrapper
-    mac = MACWrapper(model, vae, args.add_weight, model_type=args.model_type)
+    # Kim progressive weighting is implemented only for MeanFlow.
+    if args.method == 'meanflow':
+        if args.method == 'meanflow':
+            mac = MACWrapper(
+                model,
+                vae,
+                args.add_weight,
+                model_type=args.model_type,
+                kim_mode=args.kim_mode,
+                kim_k=args.kim_k,
+                kim_lambda=args.kim_lambda,
+                norm_p=args.norm_p,
+            )
+        
+        else:
+            if args.kim_mode != 'none':
+                raise ValueError(
+                    '--kim_mode is only supported when --method meanflow'
+                )
+        
+            mac = MACWrapper(
+                model,
+                vae,
+                args.add_weight,
+                model_type=args.model_type,
+            )
+    else:
+        if args.kim_mode != 'none':
+            raise ValueError('--kim_mode is only supported when --method meanflow')
+        mac = MACWrapper(
+            model,
+            vae,
+            args.add_weight,
+            model_type=args.model_type,
+        )
+
+
     model_pl = MACModulePL(hparams, mac)
+
+    kim_tag = f"kim-{args.kim_mode}-k{args.kim_k:.1f}"
 
     checkpoint_callback = ModelCheckpoint(
         dirpath='./checkpoints',
-        filename=f'{args.method}-{args.model_type}-{args.dataset}-{args.percent:.2f}-{args.add_weight:.2f}-{class_cond}-{{epoch:04d}}',
-        every_n_epochs=10
+        # filename=f'{args.method}-{args.model_type}-{args.dataset}-{args.percent:.2f}-{args.add_weight:.2f}-{class_cond}-{{epoch:04d}}',
+        filename=(
+            f'{args.method}-{args.model_type}-{args.dataset}-'
+            f'{kim_tag}-'
+            f'{args.percent:.2f}-{args.add_weight:.2f}-'
+            f'{class_cond}-{{epoch:04d}}'
+        ),
+        every_n_epochs=10,
     )
 
     # Build Trainer keyword arguments.
@@ -329,5 +434,17 @@ if __name__ == '__main__':
     if not os.path.exists('./saved'):
         os.makedirs('./saved')
     # save final weights
-    torch.save(model_pl.model.state_dict(),     f'./saved/{args.dataset}_{args.method}_{args.model_type}_mac_model_final_p{args.percent:.2f}_w{args.add_weight:.2f}_class_cond_{class_cond}.pth')
-    torch.save(model_pl.mac.ema_model.state_dict(), f'./saved/{args.dataset}_{args.method}_{args.model_type}_mac_ema_model_final_p{args.percent:.2f}_w{args.add_weight:.2f}_class_cond_{class_cond}.pth')
+    torch.save(
+        model_pl.model.state_dict(),
+        f'./saved/{args.dataset}_{args.method}_{args.model_type}_{kim_tag}_'
+        f'mac_model_final_p{args.percent:.2f}_'
+        f'w{args.add_weight:.2f}_'
+        f'normp{args.norm_p:.2f}_'
+        f'class_cond_{class_cond}.pth'
+    )
+    torch.save(
+        model_pl.mac.ema_model.state_dict(),
+        f'./saved/{args.dataset}_{args.method}_{args.model_type}_{kim_tag}_'
+        f'mac_ema_model_final_p{args.percent:.2f}_w{args.add_weight:.2f}_'
+        f'class_cond_{class_cond}.pth'
+    )
