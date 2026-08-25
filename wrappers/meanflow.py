@@ -42,6 +42,7 @@ class MACWrapper:
         self.ratio_r_not_equal_t = 0.25
 
         self.norm_p = float(norm_p)
+        print(f"[MeanFlow] adaptive loss norm_p = {self.norm_p}")
         self.norm_eps = 1e-3
         self.model_type = model_type
 
