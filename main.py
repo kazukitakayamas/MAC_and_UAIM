@@ -273,7 +273,6 @@ if __name__ == '__main__':
                     num_head_channels=64,
                     attention_resolutions="16",
                     dropout=0.1,
-                    norm_p=args.norm_p,
                 )
         vae = None
 
@@ -344,24 +343,29 @@ if __name__ == '__main__':
     # build model + MAC wrapper
     # Kim progressive weighting is implemented only for MeanFlow.
     if args.method == 'meanflow':
-        if args.kim_mode == 'progressive':
-            mac = MACWrapper(
-                model,
-                vae,
-                args.add_weight,
-                model_type=args.model_type,
-                kim_mode=args.kim_mode,
-                kim_k=args.kim_k,
-                kim_lambda=args.kim_lambda,
+        mac = MACWrapper(
+            model,
+            vae,
+            args.add_weight,
+            model_type=args.model_type,
+            kim_mode=args.kim_mode,
+            kim_k=args.kim_k,
+            kim_lambda=args.kim_lambda,
+            norm_p=args.norm_p,
+        )
+    
+    else:
+        if args.kim_mode != 'none':
+            raise ValueError(
+                '--kim_mode is only supported when --method meanflow'
             )
-        else:
-            # Keep the original MeanFlow constructor usable for the baseline.
-            mac = MACWrapper(
-                model,
-                vae,
-                args.add_weight,
-                model_type=args.model_type,
-            )
+    
+        mac = MACWrapper(
+            model,
+            vae,
+            args.add_weight,
+            model_type=args.model_type,
+        )
     else:
         if args.kim_mode != 'none':
             raise ValueError('--kim_mode is only supported when --method meanflow')
@@ -426,7 +430,9 @@ if __name__ == '__main__':
     torch.save(
         model_pl.model.state_dict(),
         f'./saved/{args.dataset}_{args.method}_{args.model_type}_{kim_tag}_'
-        f'mac_model_final_p{args.percent:.2f}_w{args.add_weight:.2f}_'
+        f'mac_model_final_p{args.percent:.2f}_'
+        f'w{args.add_weight:.2f}_'
+        f'normp{args.norm_p:.2f}_'
         f'class_cond_{class_cond}.pth'
     )
     torch.save(
