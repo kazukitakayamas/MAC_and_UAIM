@@ -107,7 +107,7 @@ class MACWrapper:
             time_samples = torch.rand(batch_size, 2, device=device)
             # Step2: sort the two sampled times
             sorted_samples, _ = torch.sort(time_samples, dim=1)
-            r, t = sorted_samples[:, 0], sorted_samples[:, 1]
+            t, r = sorted_samples[:, 0], sorted_samples[:, 1]
 
         elif time_sampler == "logit_normal":
             # [ORIGINAL MAC behavior]
