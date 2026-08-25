@@ -145,6 +145,21 @@ if __name__ == '__main__':
         type=float,
         default=1.0,
     )
+
+    parser.add_argument(
+        '--mac_timing',
+        type=str,
+        default='all',
+        choices=['none', 'early', 'late', 'all'],
+    )
+    
+    parser.add_argument(
+        '--mac_split',
+        type=float,
+        default=0.5,
+    )
+
+    
     args = parser.parse_args()
 
     # data
@@ -245,9 +260,15 @@ if __name__ == '__main__':
     )
 
     kim_tag = f"kim-{args.kim_mode}-k{args.kim_k:.1f}"
+
+    mac_tag = (
+        f"mactiming-{args.mac_timing}-"
+        f"split{args.mac_split:.2f}"
+    )
     model_path = (
         f'./saved/'
         f'{args.dataset}_{args.method}_{args.model_type}_{kim_tag}_'
+        f'{mac_tag}_'
         f'mac_ema_model_final_'
         f'p{args.percent:.2f}_'
         f'w{args.add_weight:.2f}_'
