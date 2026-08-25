@@ -257,6 +257,7 @@ if __name__ == '__main__':
         vae,
         args.add_weight,
         model_type=args.model_type,
+        norm_p=args.norm_p,
     )
 
     kim_tag = f"kim-{args.kim_mode}-k{args.kim_k:.1f}"
