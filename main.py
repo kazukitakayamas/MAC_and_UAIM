@@ -230,8 +230,15 @@ if __name__ == '__main__':
     parser.add_argument(
         '--kim_lambda',
         type=float,
-        default=0.75,
-        help='Power p for MeanFlow adaptive loss weighting.',
+        default=None,
+        help='Lambda for Kim progressive Lu weighting. If None, estimate automatically.',
+    )
+    
+    parser.add_argument(
+        '--norm_p',
+        type=float,
+        default=1.0,
+        help='Power p for MeanFlow adaptive loss normalization.',
     )
 
     args = parser.parse_args()
@@ -366,16 +373,6 @@ if __name__ == '__main__':
             args.add_weight,
             model_type=args.model_type,
         )
-    else:
-        if args.kim_mode != 'none':
-            raise ValueError('--kim_mode is only supported when --method meanflow')
-        mac = MACWrapper(
-            model,
-            vae,
-            args.add_weight,
-            model_type=args.model_type,
-        )
-
 
     model_pl = MACModulePL(hparams, mac)
 
