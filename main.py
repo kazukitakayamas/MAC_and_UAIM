@@ -237,7 +237,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--norm_p',
         type=float,
-        default=1.0,
+        default=0.75,
         help='Power p for MeanFlow adaptive loss normalization.',
     )
 
