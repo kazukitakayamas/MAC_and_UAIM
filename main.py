@@ -272,11 +272,6 @@ if __name__ == '__main__':
         default=None,
         help='Power p for MeanFlow adaptive loss normalization.',
     )
-    if args.norm_p is None:
-        if args.dataset == 'cifar':
-            args.norm_p = 0.75
-        else:
-            args.norm_p = 1.0
 
     parser.add_argument(
         '--mac_timing',
@@ -294,6 +289,12 @@ if __name__ == '__main__':
     )
 
     args = parser.parse_args()
+
+    if args.norm_p is None:
+        if args.dataset == 'cifar':
+            args.norm_p = 0.75
+        else:
+            args.norm_p = 1.0
 
     if args.method == 'meanflow':
         torch.backends.cuda.enable_flash_sdp(False)
@@ -489,7 +490,7 @@ if __name__ == '__main__':
         model_pl.model.state_dict(),
         f'./saved/{args.dataset}_{args.method}_{args.model_type}_{kim_tag}_'
         f'{mac_tag}_'
-        f'mac_ema_model_final_p{args.percent:.2f}_'
+        f'mac_model_final_p{args.percent:.2f}_'
         f'w{args.add_weight:.2f}_'
         f'normp{args.norm_p:.2f}_'
         f'class_cond_{class_cond}.pth'
