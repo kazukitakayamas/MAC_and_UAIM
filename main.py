@@ -229,7 +229,7 @@ class MACModulePL(pl.LightningModule):
         
 
 if __name__ == '__main__':
-    seed = 42
+    seed = 123
     seed_everything(seed, workers=True)
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset',      type=str,   default='cifar', choices=['cifar', 'celeba', 'afhq'])
