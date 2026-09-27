@@ -1,7 +1,7 @@
 import copy
 import torch
 import torch.nn.functional as F
-from .utils import select_low_loss_indices, get_ot_pair
+from .utils import select_low_loss_indices, select_indices_meanflow, get_ot_pair
 
 
 class MACWrapper:
@@ -25,7 +25,10 @@ class MACWrapper:
         kim_mode='none',
         kim_k=1.0,
         kim_lambda=None,
-        norm_p=0.75
+        norm_p=0.75,
+        mac_score='h0',
+        mac_selection='model',
+        mac_random_seed=12345,
     ):
         self.model = model
         self.vae = vae
@@ -42,6 +45,12 @@ class MACWrapper:
         self.ratio_r_not_equal_t = 0.25
 
         self.norm_p = float(norm_p)
+
+        # [MAC SCORE] h0 = original MAC / h1 = one-step score / mix
+        self.mac_score = mac_score
+        self.mac_selection = mac_selection
+        self.mac_generator = torch.Generator().manual_seed(int(mac_random_seed))
+        print(f"[MAC] score={self.mac_score}, selection={self.mac_selection}")
         print(f"[MeanFlow] adaptive loss norm_p = {self.norm_p}")
         self.norm_eps = 1e-3
         self.model_type = model_type
@@ -366,12 +375,14 @@ class MACWrapper:
                 )
         
             else:
-                indices_low = select_low_loss_indices(
+                indices_low = select_indices_meanflow(
                     self.ema_model,
                     batch,
                     z0,
                     percentile,
-                    model='meanflow',
+                    score=self.mac_score,
+                    selection=self.mac_selection,
+                    generator=self.mac_generator,
                 )
         
                 loss = self.get_loss(

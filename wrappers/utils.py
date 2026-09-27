@@ -42,6 +42,75 @@ def select_low_loss_indices(ema_model, batch, z0, percentile, model='meanflow'):
     return indices_low
 
 @torch.no_grad()
+def _rank01(v):
+    """Scores -> ranks in [0, 1] (used to average scores with different scales)."""
+    r = torch.empty_like(v)
+    r[torch.argsort(v)] = torch.arange(len(v), device=v.device, dtype=v.dtype)
+    return r / max(len(v) - 1, 1)
+
+
+@torch.no_grad()
+def meanflow_pair_scores(ema_model, batch, z0, score='h0'):
+    """
+    Per-pair MAC score for MeanFlow (lower = better aligned). shape [B].
+    Convention of this repo: z_t = (1-t) z0 + t x, t=0 noise, t=1 data,
+    model(z, t, h, cond) with h = r - t.
+
+      h0  : original MAC. instantaneous velocity (h=0) at both endpoints
+            0.5 * (||u(z0,0,0) - (x-z0)||^2 + ||u(x,1,0) - (x-z0)||^2)
+      h1  : one-step (average velocity over the whole interval, h=1)
+            ||u(z0,0,1) - (x-z0)||^2  == ||(z0 + u(z0,0,1)) - x||^2
+            i.e. distance between the model's 1-NFE sample from z0 and x.
+      mix : rank average of h0 and h1
+    """
+    x, cond = batch
+    b = x.size(0)
+
+    s0 = s1 = None
+    if score in ('h0', 'mix'):
+        # identical to select_low_loss_indices(model='meanflow')
+        t_temp = torch.linspace(0, 1, 2, device=x.device).unsqueeze(1).expand(-1, b)
+        t_exp = t_temp.reshape(2, b, *[1] * (z0.ndim - 1))
+        zt = (1 - t_exp) * z0.unsqueeze(0) + t_exp * x.unsqueeze(0)
+        ut_gt = (x - z0).unsqueeze(0).expand_as(zt)
+        t_flat = t_temp.flatten()
+        h = torch.zeros_like(t_flat)
+        cond_exp = cond.unsqueeze(0).expand(2, -1).reshape(-1)
+        pred = ema_model(zt.flatten(0, 1), t_flat, h, cond_exp).view_as(ut_gt)
+        s0 = F.mse_loss(pred, ut_gt, reduction='none').mean(dim=(0, 2, 3, 4))
+    if score in ('h1', 'mix'):
+        t0 = torch.zeros(b, device=x.device, dtype=x.dtype)
+        h1 = torch.ones(b, device=x.device, dtype=x.dtype)
+        u = ema_model(z0, t0, h1, cond)
+        s1 = F.mse_loss(u, x - z0, reduction='none').mean(dim=(1, 2, 3))
+
+    if score == 'h0':
+        return s0
+    if score == 'h1':
+        return s1
+    if score == 'mix':
+        return 0.5 * (_rank01(s0) + _rank01(s1))
+    raise ValueError(f"Unknown mac_score: {score}")
+
+
+@torch.no_grad()
+def select_indices_meanflow(ema_model, batch, z0, percentile, score='h0',
+                            selection='model', generator=None):
+    """MAC selection for MeanFlow. selection='random' is the control
+    (same number of pairs, same weight, chosen at random)."""
+    b = z0.size(0)
+    k = int(b * percentile)
+    if selection == 'random':
+        perm = torch.randperm(b, generator=generator, device='cpu').to(z0.device)
+        return perm[:k]
+    if selection != 'model':
+        raise ValueError(f"Unknown mac_selection: {selection}")
+    s = meanflow_pair_scores(ema_model, batch, z0, score=score)
+    _, idx = torch.topk(s, k, largest=False)
+    return idx
+
+
+@torch.no_grad()
 def get_ot_pair(ema_model, batch, z0, global_step, model='meanflow',
                 ot_method='sinkhorn', reg=None, reg_warmup_steps=20000,
                 sinkhorn_sample=False):
