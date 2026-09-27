@@ -229,9 +229,11 @@ class MACModulePL(pl.LightningModule):
         
 
 if __name__ == '__main__':
-    seed = 456
-    seed_everything(seed, workers=True)
     parser = argparse.ArgumentParser()
+    parser.add_argument('--seed', type=int, default=456)
+    parser.add_argument('--ckpt_every', type=int, default=10)
+    parser.add_argument('--keep_all_ckpts', action='store_true',
+                        help='keep every checkpoint (needed to branch Late-MAC runs from a shared first half)')
     parser.add_argument('--dataset',      type=str,   default='cifar', choices=['cifar', 'celeba', 'afhq'])
     parser.add_argument('--percent',      type=float, default=0.4)
     parser.add_argument('--add_weight',      type=float, default=0.5)
@@ -288,7 +290,16 @@ if __name__ == '__main__':
         help='Training progress boundary for early/late MAC.',
     )
 
+
+    # ===== MAC score (one-step aware) =====
+    parser.add_argument('--mac_score', type=str, default='h0', choices=['h0', 'h1', 'mix'],
+                        help='h0: original MAC (instantaneous velocity at endpoints), '
+                             'h1: one-step average velocity u(z0,0,1), mix: rank average.')
+    parser.add_argument('--mac_selection', type=str, default='model', choices=['model', 'random'],
+                        help='random = control with the same weights on randomly chosen pairs.')
+
     args = parser.parse_args()
+    seed_everything(args.seed, workers=True)
 
     if args.norm_p is None:
         if args.dataset == 'cifar':
@@ -401,6 +412,9 @@ if __name__ == '__main__':
         'norm_p': args.norm_p,
         'mac_timing': args.mac_timing,
         'mac_split': args.mac_split,
+        'mac_score': args.mac_score,
+        'mac_selection': args.mac_selection,
+        'seed': args.seed,
     }
     # build model + MAC wrapper
     # Kim progressive weighting is implemented only for MeanFlow.
@@ -414,6 +428,9 @@ if __name__ == '__main__':
             kim_k=args.kim_k,
             kim_lambda=args.kim_lambda,
             norm_p=args.norm_p,
+            mac_score=args.mac_score,
+            mac_selection=args.mac_selection,
+            mac_random_seed=args.seed + 1_000_000,
         )
     
     else:
@@ -444,7 +461,8 @@ if __name__ == '__main__':
             f'normp{args.norm_p:.2f}-'
             f'{class_cond}-{{epoch:04d}}'
         ),
-        every_n_epochs=10,
+        every_n_epochs=args.ckpt_every,
+        save_top_k=-1 if args.keep_all_ckpts else 1,
     )
 
     # Build Trainer keyword arguments.
@@ -482,6 +500,10 @@ if __name__ == '__main__':
         f"mactiming-{args.mac_timing}-"
         f"split{args.mac_split:.2f}"
     )
+    if args.mac_score != 'h0':
+        mac_tag += f"-score{args.mac_score}"
+    if args.mac_selection != 'model':
+        mac_tag += f"-sel{args.mac_selection}"
     
     if not os.path.exists('./saved'):
         os.makedirs('./saved')

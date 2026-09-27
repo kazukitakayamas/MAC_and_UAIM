@@ -159,7 +159,14 @@ if __name__ == '__main__':
         default=0.5,
     )
 
-    
+
+    # ===== MAC score (one-step aware) =====
+    parser.add_argument('--mac_score', type=str, default='h0', choices=['h0', 'h1', 'mix'],
+                        help='h0: original MAC (instantaneous velocity at endpoints), '
+                             'h1: one-step average velocity u(z0,0,1), mix: rank average.')
+    parser.add_argument('--mac_selection', type=str, default='model', choices=['model', 'random'],
+                        help='random = control with the same weights on randomly chosen pairs.')
+
     args = parser.parse_args()
 
     # data
@@ -266,6 +273,10 @@ if __name__ == '__main__':
         f"mactiming-{args.mac_timing}-"
         f"split{args.mac_split:.2f}"
     )
+    if args.mac_score != 'h0':
+        mac_tag += f"-score{args.mac_score}"
+    if args.mac_selection != 'model':
+        mac_tag += f"-sel{args.mac_selection}"
     model_path = (
         f'./saved/'
         f'{args.dataset}_{args.method}_{args.model_type}_{kim_tag}_'
